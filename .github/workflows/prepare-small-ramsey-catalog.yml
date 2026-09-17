@@ -1,0 +1,63 @@
+name: Prepare catalog-only small Ramsey reference
+on:
+  push:
+    branches: [staging/jsp-000440-small-20260918]
+    paths: ['.github/workflows/prepare-small-ramsey-catalog.yml']
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Patch only the existing JSP-000440 Lean and attribution rows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64, hashlib, json, os, pathlib, urllib.request
+          p=pathlib.Path('problems/catalog-0401-0500.md')
+          old=p.read_text()
+          sha=hashlib.sha1(b'blob '+str(len(old.encode())).encode()+b'\0'+old.encode()).hexdigest()
+          if sha!='c625a2b8edb3892e09cfc068e26347dd8209f91b':
+              raise SystemExit('Unexpected base catalog: '+sha)
+          start=old.index('<a id="JSP-000440"></a>')
+          end=old.index('<a id="JSP-000441"></a>', start)
+          entry=old[start:end]
+          if entry.count('| Lean proof | No |')!=1 or '| Attribution basis |' in entry:
+              raise SystemExit('Unexpected target rows')
+          root='https://github.com/x2515102083/erdos339-upper-density/blob/1efb2abbd453f5fb33cb2770c4755418ecb90338/research/erdos549-small/'
+          prior='https://github.com/plby/lean-proofs/blob/8822f7ddef30fadbd92e1c6ab4ed897af356af5e/src/latest/ErdosProblems/Erdos549.lean'
+          lean='| Lean proof | Yes — [Independent 35-vertex Lean source]('+root+'Small.lean), `Erdos549Small.not_erdos_549`: complete negation of the original universal `R(T)=4k-1` formula, using a tree with bipartition sizes 9 and 18.<br>Formalization contributors: x2515102083 (35-vertex proof, with ChatGPT assistance). Earlier complete 63-vertex formalization: [Lean source]('+prior+'), credited there to Codex and GPT-5.6 Sol; related intake [PR #839](https://github.com/TheJustinSunPrize/awards/pull/839). |'
+          attribution='| Attribution basis | [Scope, authorship and prior-work disclosure]('+root+'README.md); [build and axiom evidence]('+root+'VERIFICATION.md). The new contribution uses a distinct five-cycle/matching-deletion witness and independently written non-induced-containment proofs, not a re-export of the earlier proof. Original mathematical disproof credit remains with Sergey Norin, Yue Ru Sun and Yi Zhao ([NSZ16](https://arxiv.org/abs/1605.03612)). No first-solver or first-formalization claim is made. |'
+          changed=entry.replace('| Lean proof | No |',lean+'\n'+attribution)
+          new=old[:start]+changed+old[end:]
+          if '| Eligible to claim | No |' not in changed:
+              raise SystemExit('Eligibility unexpectedly changed')
+          p.write_text(new)
+          data=new.encode()
+          blob_sha=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          req=urllib.request.Request('https://api.github.com/repos/x2515102083/awards/git/blobs',data=json.dumps({'content':base64.b64encode(data).decode(),'encoding':'base64'}).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(req,timeout=30) as r: result=json.load(r)
+          if result['sha']!=blob_sha: raise SystemExit('Uploaded blob mismatch')
+          print('CATALOG_BLOB_SHA',blob_sha)
+          print('CATALOG_BYTES',len(data))
+          print('PROOF_COMMIT','1efb2abbd453f5fb33cb2770c4755418ecb90338')
+          print('BASE_COMMIT','ff33abd13163e789790eb1014e55f57c05f94432')
+          print('Only a blob is prepared; no branch, PR, eligibility or award is changed by this step.')
+      - name: Review exact catalog-only diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff --name-only)" = problems/catalog-0401-0500.md
+          git diff --stat
+          git diff -- problems/catalog-0401-0500.md
+      - name: Repository validation
+        run: python3 scripts/manage.py validate
+      - name: Repository unit tests
+        run: python3 -m unittest discover -s tests
+      - name: Link check
+        run: python3 scripts/manage.py links
