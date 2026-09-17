@@ -10,9 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node.js 24)
         with:
           persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6 (Node.js 24)
+        with:
+          python-version: "3.12"
+      - name: Install validation dependencies
+        run: python -m pip install -r requirements.txt
       - name: Patch only the existing JSP-000440 Lean and attribution rows
         env:
           GH_TOKEN: ${{ github.token }}
@@ -56,8 +61,8 @@ jobs:
           git diff --stat
           git diff -- problems/catalog-0401-0500.md
       - name: Repository validation
-        run: python3 scripts/manage.py validate
+        run: python scripts/manage.py validate
       - name: Repository unit tests
-        run: python3 -m unittest discover -s tests
+        run: python -m unittest discover -s tests
       - name: Link check
-        run: python3 scripts/manage.py links
+        run: python scripts/manage.py links
