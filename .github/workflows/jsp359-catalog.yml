@@ -1,0 +1,41 @@
+name: Prepare validated JSP-000359 catalog reference
+on:
+  push:
+    branches: [automation/jsp-000359-catalog-20260918]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: builder
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: x2515102083/awards
+          ref: ff33abd13163e789790eb1014e55f57c05f94432
+          path: catalog
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify successful proof evidence and prepare one catalog entry
+        run: python3 builder/automation_jsp359.py prepare catalog
+      - name: Validate catalog-only change
+        working-directory: catalog
+        run: |
+          set -euo pipefail
+          python3 -m pip install -r requirements.txt
+          python3 scripts/manage.py validate
+          python3 scripts/manage.py links
+          python3 scripts/manage.py history --base ff33abd13163e789790eb1014e55f57c05f94432
+          python3 -m unittest discover -s tests -v
+          python3 scripts/manage.py build
+          python3 scripts/manage.py check
+          test "$(git diff --name-only)" = 'problems/catalog-0301-0400.md'
+          printf 'VALIDATION_PASS\n' > ../catalog-validation.txt
+      - name: Create separate catalog-only submission branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 builder/automation_jsp359.py publish catalog

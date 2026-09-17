@@ -1,5 +1,0 @@
-# Only create in awards/ after verification, written confirmation and announcement.
-id: "2026-01"
-announced_at: "<YYYY-MM-DD>"
-announcement: "<public announcement HTTPS URL>"
-award_ids: ["<award-id>"]
