@@ -1,0 +1,76 @@
+name: Prepare JSP690 both-reading catalog reference
+on:
+  push:
+    branches: [prepare/jsp690-both-20260918]
+    paths: ['.github/workflows/prepare-jsp690-both.yml']
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 5382fe0bf9f631d316ddd5609eb53c9231b22334
+          fetch-depth: 0
+      - name: Replace only the two existing JSP690 evidence rows
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 5382fe0bf9f631d316ddd5609eb53c9231b22334
+          test "$(git rev-parse HEAD:problems/catalog-0601-0700.md)" = a6a99d984e05fe139f4f5d0cc10619f11bbdcedd
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('problems/catalog-0601-0700.md')
+          s=p.read_text(encoding='utf-8')
+          start=s.index('<a id="JSP-000690"></a>')
+          end=s.index('<a id="JSP-000691"></a>', start)
+          block=s[start:end]
+          if '05e214a2d112513abd5c4a43fa7e40358457de82' not in block: raise SystemExit('old proof reference missing')
+          root='https://github.com/x2515102083/jsp-000690-lean'
+          pin=root+'/blob/413f42eabdefdb5cf1514ef77822f9cabeb01669/'
+          rows={
+            '| Lean proof |': '| Lean proof | Submitted for maintainer review — [AI-assisted formalization by x2515102083]('+root+'), branch `proof-both-readings-20260918`, commit `413f42eabdefdb5cf1514ef77822f9cabeb01669`; theorem `JSP690Complete.complete_resolution` in [Complete.lean]('+pin+'Complete.lean). Complete chromatic existence statement via Li\'s 9-vertex, 22-edge construction, plus the alternative transversal-critical nonexistence statement via a universal degree-at-most-6 proof and sharpness. [Build and statement guide]('+pin+'README.md); [submitter-run verification]('+pin+'VERIFICATION.md). Earlier complete formalizations exist; no first-formalization priority or independent review is claimed. |',
+            '| Attribution basis |': '| Attribution basis | Mathematical source: Ruiliang Li, [arXiv:2512.24850v1](https://arxiv.org/abs/2512.24850v1), both criticality interpretations; the transversal argument uses the classical (2,2) set-pairs bound. Lean source: [authorship, AI assistance and prior-work disclosure]('+pin+'ATTRIBUTION.md). Original chromatic source by this account with OpenAI Codex assistance is unchanged; ChatGPT-assisted transversal proof and complete integration are the new supplement. The earlier plby Erdős 834 proof already covers both readings and retains its priority. No new mathematical discovery, confirmed recipient eligibility or award is asserted. |'
+          }
+          lines=block.splitlines(keepends=True)
+          for prefix,value in rows.items():
+            indices=[i for i,line in enumerate(lines) if line.startswith(prefix)]
+            if len(indices)!=1: raise SystemExit('ambiguous evidence row '+prefix)
+            lines[indices[0]]=value+'\n'
+          p.write_text(s[:start]+''.join(lines)+s[end:],encoding='utf-8')
+          PY
+          test "$(git diff --name-only)" = problems/catalog-0601-0700.md
+          git diff --check
+      - name: Validate unchanged repository rules and tests
+        run: |
+          set -euo pipefail
+          python3 -m pip install -r requirements.txt
+          mkdir /tmp/catalog-evidence
+          for action in validate links build check; do
+            python3 scripts/manage.py "$action" 2>&1 | tee "/tmp/catalog-evidence/$action.log"
+          done
+          python3 -m unittest discover -s tests -v 2>&1 | tee /tmp/catalog-evidence/tests.log
+          git diff --check
+          test "$(git diff --name-only)" = problems/catalog-0601-0700.md
+      - name: Commit the validated catalog only and retain separately for review
+        run: |
+          set -euo pipefail
+          git config user.name x2515102083
+          git config user.email 190179539+x2515102083@users.noreply.github.com
+          git add problems/catalog-0601-0700.md
+          git commit -m 'JSP-000690: reference complete two-reading formalization and preserve prior attribution'
+          test "$(git rev-parse HEAD^)" = 5382fe0bf9f631d316ddd5609eb53c9231b22334
+          test "$(git diff --name-only ff33abd13163e789790eb1014e55f57c05f94432 HEAD)" = problems/catalog-0601-0700.md
+          python3 scripts/manage.py history --base ff33abd13163e789790eb1014e55f57c05f94432 2>&1 | tee /tmp/catalog-evidence/history.log
+          git diff --check HEAD^ HEAD
+          git rev-parse HEAD > /tmp/catalog-evidence/catalog-commit.txt
+          git diff ff33abd13163e789790eb1014e55f57c05f94432 HEAD > /tmp/catalog-evidence/catalog.patch
+          cp problems/catalog-0601-0700.md /tmp/catalog-evidence/
+          git push origin HEAD:refs/heads/verified/jsp690-both-20260918
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: jsp690-both-catalog-preparation
+          path: /tmp/catalog-evidence/
+          retention-days: 90
