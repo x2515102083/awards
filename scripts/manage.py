@@ -98,7 +98,7 @@ def english_markdown(path):
 def git_text(root, revision, path):
     require(re.fullmatch(r"[0-9a-f]{40}", revision), "Expected full Git commit SHA")
     command = ["git", "-C", str(root), "show", f"{revision}:{path}"]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", check=False)
     require(result.returncode == 0, f"Cannot read {path} at {revision}; fetch full Git history")
     return result.stdout
 
@@ -257,7 +257,7 @@ def check_history(root, base):
     current = {item["entry"]["id"]: item for output in outputs.values() for item in output["items"]}
     require(re.fullmatch(r"[0-9a-f]{40}", base), "History base must be a full commit SHA")
     listed = subprocess.run(["git", "-C", str(root), "ls-tree", "-r", "--name-only", base, "--", "awards", "candidates"],
-                            capture_output=True, text=True, check=False)
+                            capture_output=True, text=True, encoding="utf-8", check=False)
     require(listed.returncode == 0, "Unable to read comparison commit; fetch full history")
     old_paths = set(listed.stdout.splitlines())
     for path in sorted(old_paths):
@@ -274,11 +274,12 @@ def check_history(root, base):
         if new["entry"]["status"] == "revoked":
             for key in ("decision", "recipients", "verification"):
                 require(old[key] == new["entry"][key], f"Revocation must preserve original {key}")
-            old_record = yaml.load(git_text(root, base, str(Path(path).parent / "verification/record.yaml")), Loader=RecordLoader)
+            old_record = yaml.load(git_text(root, base, (Path(path).parent / "verification/record.yaml").as_posix()), Loader=RecordLoader)
             require(old_record == new["verification_record"], "Revocation must preserve the original verification record")
-        old_statement_path = str(Path(path).parent / "verification/statement.yaml")
+        # Git tree paths always use '/', even when the checkout is on Windows.
+        old_statement_path = (Path(path).parent / "verification/statement.yaml").as_posix()
         # Previously archived statements remain immutable after further replacements.
-        prefix = str(Path(path).parent / "verification/statements") + "/"
+        prefix = (Path(path).parent / "verification/statements").as_posix() + "/"
         for archived_old_path in sorted(p for p in old_paths if p.startswith(prefix) and p.endswith(".yaml")):
             prior = yaml.load(git_text(root, base, archived_old_path), Loader=RecordLoader)
             current_archive = root / new["source_path"] / "verification/statements" / Path(archived_old_path).name

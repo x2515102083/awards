@@ -42,7 +42,7 @@ class RecordTests(unittest.TestCase):
         self.write(self.entry_dir.relative_to(self.root) / "award.yaml", self.entry)
 
     def git(self, *args):
-        return subprocess.run(["git", "-C", str(self.root), *args], check=True, text=True, capture_output=True).stdout.strip()
+        return subprocess.run(["git", "-C", str(self.root), *args], check=True, text=True, encoding="utf-8", capture_output=True).stdout.strip()
 
     def commit(self):
         self.git("add", ".")
@@ -88,13 +88,13 @@ class RecordTests(unittest.TestCase):
     def test_nonempty_english_sections(self):
         for name in ("citation.md", "recipients.md"):
             path = self.entry_dir / name
-            original = path.read_text()
+            original = path.read_text(encoding="utf-8")
             for content in ("# Missing section\n", "## English\n\n", "## English\n\n## Other\nUnrelated text.\n"):
                 with self.subTest(name=name, content=content):
-                    path.write_text(content)
+                    path.write_text(content, encoding="utf-8")
                     with self.assertRaisesRegex(manage.InvalidRecord, "English"):
                         manage.collect(self.root)
-            path.write_text(original)
+            path.write_text(original, encoding="utf-8")
         manage.collect(self.root)
 
     def test_duplicate_yaml_keys_rejected(self):
@@ -150,6 +150,23 @@ class RecordTests(unittest.TestCase):
         self.write(relative.parent / "statements" / (statement["id"] + ".yaml"), {**statement, "status": "superseded"})
         manage.check_history(self.root, base)
 
+        # A later revision must not silently bypass the archived-statement check.
+        base = self.commit()
+        archived = {**statement, "status": "superseded"}
+        archived["statement"] = {**statement["statement"], "text": "Changed archive"}
+        self.write(relative.parent / "statements" / (statement["id"] + ".yaml"), archived)
+        with self.assertRaisesRegex(manage.InvalidRecord, "Previously archived statements"):
+            manage.check_history(self.root, base)
+
+    def test_git_history_reads_utf8_records(self):
+        self.git("init", "-q")
+        relative = "candidates/observation/example-problem/verification/statement.yaml"
+        statement = self.statement()
+        statement["statement"]["text"] = "Caf\u00e9 \u6570\u5b66"
+        self.write(relative, statement)
+        base = self.commit()
+        self.assertEqual(yaml.load(manage.git_text(self.root, base, relative), Loader=manage.RecordLoader), statement)
+
     def test_local_links_and_anchors(self):
         for name in ("README.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md"):
             (self.root / name).write_text("# Title\n")
@@ -157,8 +174,8 @@ class RecordTests(unittest.TestCase):
         for name in ("citation.md", "recipients.md"):
             (self.entry_dir / name).write_text("# Entry\n")
         target = self.root / "docs/page.md"
-        target.write_text("# Café\n\n# Same\n\n# Same\n")
-        (self.root / "README.md").write_text("[Unicode heading](docs/page.md#café)\n\n[repeat][ref]\n\n[ref]: docs/page.md#same-1\n")
+        target.write_text("# Café\n\n# Same\n\n# Same\n", encoding="utf-8")
+        (self.root / "README.md").write_text("[Unicode heading](docs/page.md#café)\n\n[repeat][ref]\n\n[ref]: docs/page.md#same-1\n", encoding="utf-8")
         manage.check_links(self.root)
         (self.root / "README.md").write_text("[broken](docs/page.md#missing)\n")
         with self.assertRaisesRegex(manage.InvalidRecord, "anchor"):
